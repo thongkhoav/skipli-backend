@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "typeRoots": ["./types", "./node_modules/@types"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2023",
@@ -13,5 +14,5 @@
     }
   },
   "files": ["src/type.d.ts"],
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "types"]
 }
