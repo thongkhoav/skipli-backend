@@ -33,12 +33,19 @@
     "typescript-eslint": "^8.37.0"
   },
   "dependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "firebase-admin": "^13.4.0",
     "helmet": "^8.1.0",
-    "twilio": "^5.7.3"
+    "i": "^0.3.7",
+    "nodemailer": "^7.0.5",
+    "npm": "^11.4.2",
+    "twilio": "^5.7.3",
+    "uuid": "^11.1.0"
   }
 }

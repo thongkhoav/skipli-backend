@@ -8,6 +8,7 @@ const { admin, db } = require('./services/firebase')
 const { globalErrHandler } = require('./controllers/errorController')
 const userRoutes = require('./routes/userRoutes')
 const instructorRoutes = require('./routes/instructorRoutes')
+const studentRoutes = require('./routes/studentRoutes')
 const authController = require('./controllers/authController')
 
 const app = express()
@@ -31,6 +32,7 @@ app.use(express.json())
 app.use(authController.protect)
 app.use('/', userRoutes)
 app.use('/', instructorRoutes)
+app.use('/', studentRoutes)
 
 app.use(globalErrHandler)
 
