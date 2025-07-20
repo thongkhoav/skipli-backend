@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import AppError from '~/utils/appError'
 const jwt = require('jsonwebtoken')
 import { generateCode, UserRole } from '~/utils'
+import { publicPaths } from '~/utils/paths/publicPath'
 const { admin, db } = require('../services/firebase')
 const { sendSMS } = require('../services/twilio')
 
@@ -26,6 +27,15 @@ exports.createAccessCode = async (req: Request, res: Response, next: NextFunctio
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })
+      // create class room for the user
+      const classRoomRef = db.collection('classrooms').doc(phoneNumber)
+      await classRoomRef.set({
+        name: 'Default Classroom',
+        description: 'This is your default classroom',
+        owner: phoneNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
     } else {
       // Existing user: just update the code
       await userRef.update({
@@ -45,12 +55,17 @@ exports.createAccessCode = async (req: Request, res: Response, next: NextFunctio
 
 //POST /validateAccessCode
 exports.validateAccessCode = async (req: Request, res: Response, next: NextFunction) => {
-  const { phoneNumber, accessCode } = req.body
-  if (!phoneNumber || !accessCode) {
-    return next(new AppError(400, 'fail', 'Phone number and access code are required'))
+  const { phoneNumber, email, accessCode } = req.body
+  if ((!phoneNumber && !email) || !accessCode) {
+    return next(new AppError(400, 'fail', 'Please provide phone number or email and access code'))
   }
   try {
-    const userRef = db.collection('users').doc(phoneNumber)
+    let userRef
+    if (phoneNumber) {
+      userRef = db.collection('users').doc(phoneNumber)
+    } else {
+      userRef = db.collection('users').doc(email)
+    }
     const userDoc = await userRef.get()
     if (!userDoc.exists) {
       return next(new AppError(404, 'fail', 'User not found'))
@@ -60,25 +75,16 @@ exports.validateAccessCode = async (req: Request, res: Response, next: NextFunct
       return next(new AppError(401, 'fail', 'Invalid access code'))
     }
     // Generate JWT token
-    const token = jwt.sign({ phoneNumber }, process.env.ACCESS_TOKEN_SIGN_SECRET, { expiresIn: '1h' })
-    return res.status(200).json({
-      message: 'Access code validated successfully',
-      token
+    const token = jwt.sign({ phoneNumber }, process.env.ACCESS_TOKEN_SIGN_SECRET, {
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRATION || '1h'
     })
-  } catch (error: any) {
-    return next(new AppError(500, 'fail', error.message))
-  }
-}
-
-exports.testTwilio = async (req: Request, res: Response, next: NextFunction) => {
-  const { phoneNumber } = req.body
-  if (!phoneNumber) {
-    return next(new AppError(400, 'fail', 'Phone number is required'))
-  }
-  try {
-    await sendSMS(phoneNumber, 'This is a test message from Skipli API')
+    const refreshToken = jwt.sign({ phoneNumber }, process.env.REFRESH_TOKEN_SIGN_SECRET, {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRATION || '7d'
+    })
     return res.status(200).json({
-      message: 'Test SMS sent successfully.'
+      ...userData,
+      accessToken: token,
+      refreshToken: refreshToken
     })
   } catch (error: any) {
     return next(new AppError(500, 'fail', error.message))
@@ -87,7 +93,10 @@ exports.testTwilio = async (req: Request, res: Response, next: NextFunction) => 
 
 exports.protect = async (req: Request, res: Response, next: NextFunction) => {
   // Skip authentication for public routes
-  if (req.isPublic) return next()
+  console.log('Request path:', req.path)
+  if (publicPaths.includes(req.path)) {
+    return next()
+  }
 
   try {
     // 1) check if the token is there
@@ -117,7 +126,11 @@ exports.protect = async (req: Request, res: Response, next: NextFunction) => {
   }
 }
 
-exports.markPublic = (req: Request, res: Response, next: NextFunction) => {
-  req.isPublic = true
-  next()
+exports.restrictTo = (roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!roles.includes((req as any).user.role)) {
+      return next(new AppError(403, 'fail', 'You are not allowed to do this action'))
+    }
+    next()
+  }
 }
