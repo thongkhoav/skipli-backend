@@ -6,10 +6,10 @@ process.on('uncaughtException', (err) => {
   process.exit(1)
 })
 
-const app = require('./app')
+const httpServer = require('./app')
 const port = process.env.PORT || 4000
 
 // Start the server
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`Application is running on port ${port}`)
 })

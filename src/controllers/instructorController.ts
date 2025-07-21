@@ -7,11 +7,10 @@ import { sendMail } from '~/services/nodemailer'
 const { admin, db } = require('../services/firebase')
 const { v4: uuidv4 } = require('uuid')
 
-// POST /createAccessCode
 exports.addStudent = async (req: Request, res: Response, next: NextFunction) => {
-  const { name, phone, email, role } = req.body
-  if (!phone || !name || !email || !role) {
-    return next(new AppError(400, 'fail', 'Phone number, name, email and role are required'))
+  const { name, phone, email, address } = req.body
+  if (!phone || !name || !email) {
+    return next(new AppError(400, 'fail', 'Phone number, name and email are required'))
   }
   try {
     const emailQuery = await db.collection('users').where('email', '==', email).get()
@@ -26,8 +25,8 @@ exports.addStudent = async (req: Request, res: Response, next: NextFunction) => 
     const newUserId = uuidv4()
     const userRef = db.collection('users').doc(newUserId)
 
+    // create new user document
     await userRef.set({
-      // Generate a unique ID for the user
       id: newUserId,
       phone: phone,
       accessCode: '',
@@ -35,7 +34,7 @@ exports.addStudent = async (req: Request, res: Response, next: NextFunction) => 
       email: email,
       username: '',
       role: UserRole.STUDENT,
-      studentRole: role,
+      address: address,
       isVerified: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -46,6 +45,26 @@ exports.addStudent = async (req: Request, res: Response, next: NextFunction) => 
     await roomRef.update({
       students: admin.firestore.FieldValue.arrayUnion(newUserId)
     })
+
+    // create conversation for the new student
+    const conversationId = uuidv4()
+
+    const conversationRef = db.collection('conversations').doc(conversationId)
+    await conversationRef.set({
+      owner: req.user?.id,
+      student: newUserId,
+      lastMessage: '',
+      updatedAt: new Date().toISOString()
+    })
+
+    //Add a welcome message
+    await conversationRef.collection('messages').add({
+      from: req.user?.id,
+      to: newUserId,
+      content: `Hi ${name}, welcome to Skipli Classroom!`,
+      timestamp: new Date().toISOString()
+    })
+
     //create a JWT token for the new student to setup their account
     const newStudentToken = jwt.sign({ phone, email }, process.env.NEW_STUDENT_TOKEN_SIGN_SECRET, {
       expiresIn: process.env.NEW_STUDENT_TOKEN_EXPIRATION || '1d'
@@ -69,9 +88,37 @@ exports.addStudent = async (req: Request, res: Response, next: NextFunction) => 
   }
 }
 
+exports.editStudentById = async (req: Request, res: Response, next: NextFunction) => {
+  const { name, address } = req.body
+  const studentId = req.params.id
+  if (!studentId) {
+    return next(new AppError(400, 'fail', 'Student ID is required'))
+  }
+  if (!name) {
+    return next(new AppError(400, 'fail', 'Name is required'))
+  }
+  try {
+    const studentRef = await db.collection('users').doc(studentId)
+    const studentDoc = await studentRef.get()
+    if (!studentDoc.exists) {
+      return next(new AppError(404, 'fail', 'Student not found'))
+    }
+    await studentRef.update({
+      name: name,
+      address: address,
+      updatedAt: new Date().toISOString()
+    })
+    return res.status(200).json({
+      message: 'Student updated successfully.'
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
+
 exports.getStudents = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const roomQuery = await db.collection('classrooms').where('owner', '==', req.user?.id).get()
+    const roomQuery = await db.collection('classrooms').where('owner', '==', req?.user?.id).get()
     const roomRef = roomQuery.docs[0].ref
     const roomDoc = await roomRef.get()
     if (!roomDoc.exists) {
@@ -103,17 +150,7 @@ exports.getStudents = async (req: Request, res: Response, next: NextFunction) =>
 
 exports.assignLesson = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { title, description, studentPhones } = req.body
-    // get student IDs from their phone numbers
-    const studentIds: string[] = []
-    for (const phone of studentPhones) {
-      const userQuery = await db.collection('users').where('phone', '==', phone).get()
-      if (userQuery.empty) {
-        return next(new AppError(404, 'fail', `No user found with phone number ${phone}`))
-      }
-      const userDoc = userQuery.docs[0]
-      studentIds.push(userDoc.id)
-    }
+    const { title, description, studentIds } = req.body
     const newLessonId = uuidv4()
     const lessonRef = db.collection('lessons').doc(newLessonId)
 
@@ -135,7 +172,7 @@ exports.assignLesson = async (req: Request, res: Response, next: NextFunction) =
 
     // Initialize lesson status for each student
     const batch = db.batch()
-    studentIds.forEach((userId) => {
+    studentIds.forEach((userId: string) => {
       const docId = `${userId}_${lessonRef.id}`
       const statusRef = db.collection('lessonStatus').doc(docId)
       batch.set(statusRef, {
@@ -167,12 +204,87 @@ exports.getLessons = async (req: Request, res: Response, next: NextFunction) => 
       })
     }
 
+    const lessons = await Promise.all(
+      lessonsQuery.docs.map(async (doc: any) => {
+        const lessonData = doc.data()
+        const studentDetails = await Promise.all(
+          lessonData.students.map(async (studentId: string) => {
+            const studentRef = db.collection('users').doc(studentId)
+            const studentDoc = await studentRef.get()
+            const lessonStatusRef = db
+              .collection('lessonStatus')
+              .where('userId', '==', studentId)
+              .where('lessonId', '==', doc.id)
+            const lessonStatusQuery = await lessonStatusRef.get()
+            if (studentDoc.exists) {
+              return {
+                id: studentDoc.id,
+                ...studentDoc.data(),
+                isDone: lessonStatusQuery?.docs[0]?.data()?.isDone || false
+              }
+            }
+            return null
+          })
+        )
+        return {
+          id: doc.id,
+          ...lessonData,
+          students: studentDetails.filter((s) => s !== null)
+        }
+      })
+    )
     return res.status(200).json({
       status: 'success',
-      data: lessonsQuery.docs.map((doc: any) => ({
+      data: lessons.map((doc: any) => ({
         id: doc.id,
-        ...doc.data()
+        title: doc.title,
+        description: doc.description,
+        students: doc.students,
+        createdAt: doc.createdAt
       }))
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
+
+// Chat
+exports.getChats = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return next(new AppError(401, 'fail', 'Unauthorized access'))
+    }
+    const conversationsQuery = await db.collection('conversations').where('owner', '==', userId).get()
+    if (conversationsQuery.empty) {
+      return res.status(200).json({
+        status: 'success',
+        data: []
+      })
+    }
+    // from each conversation, get student details
+    const conversations = await Promise.all(
+      conversationsQuery.docs.map(async (doc: any) => {
+        const conversationData = doc.data()
+        const studentRef = db.collection('users').doc(conversationData.student)
+        const studentDoc = await studentRef.get()
+        if (!studentDoc.exists) {
+          return null
+        }
+        return {
+          id: doc.id,
+          ...conversationData,
+          student: {
+            id: studentDoc.id,
+            ...studentDoc.data()
+          }
+        }
+      })
+    )
+    const filteredConversations = conversations.filter((c) => c !== null)
+    return res.status(200).json({
+      status: 'success',
+      data: filteredConversations
     })
   } catch (error: any) {
     return next(new AppError(500, 'fail', error.message))

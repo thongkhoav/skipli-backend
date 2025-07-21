@@ -11,6 +11,11 @@ router.post(
   authController.restrictTo([UserRole.INSTRUCTOR]),
   instructorController.addStudent
 )
+router.put(
+  instructorPaths.editStudentById,
+  authController.restrictTo([UserRole.INSTRUCTOR]),
+  instructorController.editStudentById
+)
 router.get(
   instructorPaths.getStudents,
   authController.restrictTo([UserRole.INSTRUCTOR]),
@@ -26,5 +31,8 @@ router.post(
   authController.restrictTo([UserRole.INSTRUCTOR]),
   instructorController.assignLesson
 )
+
+// Chat
+router.get(instructorPaths.getChats, authController.restrictTo([UserRole.INSTRUCTOR]), instructorController.getChats)
 
 module.exports = router

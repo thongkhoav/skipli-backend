@@ -5,6 +5,7 @@ export const publicPaths = [
   userPaths.createAccessCode,
   userPaths.validateAccessCode,
   userPaths.loginEmail,
+  userPaths.createInstructor,
   userPaths.loginByAccount,
   userPaths.setupAccount,
   userPaths.checkStudentNotSetup

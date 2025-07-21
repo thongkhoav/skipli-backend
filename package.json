@@ -42,9 +42,11 @@
     "express": "^5.1.0",
     "firebase-admin": "^13.4.0",
     "helmet": "^8.1.0",
+    "http": "^0.0.1-security",
     "i": "^0.3.7",
     "nodemailer": "^7.0.5",
     "npm": "^11.4.2",
+    "socket.io": "^4.8.1",
     "twilio": "^5.7.3",
     "uuid": "^11.1.0"
   }

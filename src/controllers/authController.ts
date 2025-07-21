@@ -9,6 +9,52 @@ const { sendSMS } = require('../services/twilio')
 const bcrypt = require('bcrypt')
 const { v4: uuidv4 } = require('uuid')
 
+exports.createInstructor = async (req: Request, res: Response, next: NextFunction) => {
+  const { phone, name, email } = req.body
+  if (!phone || !name || !email) {
+    return next(new AppError(400, 'fail', 'Phone number, name and email are required'))
+  }
+  try {
+    const phoneQuery = await db.collection('users').where('phone', '==', phone).get()
+    if (!phoneQuery.empty) {
+      return next(new AppError(400, 'fail', 'User already exists with this phone number'))
+    }
+    const emailQuery = await db.collection('users').where('email', '==', email).get()
+    if (!emailQuery.empty) {
+      return next(new AppError(400, 'fail', 'User already exists with this email'))
+    }
+    // Create a new user document
+    const userRef = db.collection('users').doc(uuidv4())
+    await userRef.set({
+      id: userRef.id,
+      phone: phone,
+      name: name,
+      email: email,
+      accessCode: '',
+      role: UserRole.INSTRUCTOR,
+      isVerified: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+    // Create a classroom for the instructor
+    const classRoomId = uuidv4()
+    const classRoomRef = db.collection('classrooms').doc(classRoomId)
+    await classRoomRef.set({
+      id: classRoomId,
+      name: 'Default Classroom',
+      description: 'This is your default classroom',
+      owner: userRef.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+    return res.status(200).json({
+      message: 'Instructor created successfully.'
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
+
 // POST /createAccessCode
 exports.createAccessCode = async (req: Request, res: Response, next: NextFunction) => {
   const { phoneNumber } = req.body
@@ -17,43 +63,22 @@ exports.createAccessCode = async (req: Request, res: Response, next: NextFunctio
   }
   const accessCode = generateCode()
   try {
-    const phoneQuery = await db.collection('users').where('phone', '==', phoneNumber).get()
-    if (!phoneQuery.empty) {
-      return next(new AppError(400, 'fail', 'User already exists with this phone number'))
+    const query = await db
+      .collection('users')
+      .where('phone', '==', phoneNumber)
+      .where('role', '==', UserRole.INSTRUCTOR)
+      .get()
+    if (query.empty) {
+      return next(new AppError(400, 'fail', 'Instructor not found with this phone number'))
     }
-    const newUserId = uuidv4()
-    const userRef = db.collection('users').doc(newUserId)
-    const userDoc = await userRef.get()
-    if (!userDoc.exists) {
-      // New user: create record
-      await userRef.set({
-        id: newUserId,
-        phone: phoneNumber,
-        accessCode: accessCode,
-        name: '',
-        email: '',
-        role: UserRole.INSTRUCTOR,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      })
-      // create class room for the user
-      const classRoomId = uuidv4()
-      const classRoomRef = db.collection('classrooms').doc(classRoomId)
-      await classRoomRef.set({
-        id: classRoomId,
-        name: 'Default Classroom',
-        description: 'This is your default classroom',
-        owner: newUserId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      })
-    } else {
-      // Existing user: just update the code
-      await userRef.update({
-        accessCode: accessCode,
-        updatedAt: new Date().toISOString()
-      })
-    }
+    const userRef = query.docs[0].ref
+
+    // update the access code
+    await userRef.update({
+      accessCode: accessCode,
+      updatedAt: new Date().toISOString()
+    })
+
     // Send SMS with the access code
     await sendSMS(phoneNumber, `Your access code is: ${accessCode}`)
     return res.status(200).json({
@@ -96,15 +121,15 @@ exports.loginEmail = async (req: Request, res: Response, next: NextFunction) => 
 }
 
 exports.loginByAccount = async (req: Request, res: Response, next: NextFunction) => {
-  const { password, email } = req.body
-  if (!password || !email) {
-    return next(new AppError(400, 'fail', 'Email and password are required'))
+  const { password, username } = req.body
+  if (!password || !username) {
+    return next(new AppError(400, 'fail', 'Username and password are required'))
   }
   try {
     // get doc by email and role
     const userQuery = await db
       .collection('users')
-      .where('email', '==', email)
+      .where('username', '==', username)
       .where('role', '==', UserRole.STUDENT)
       .get()
     if (userQuery.empty) {
@@ -272,8 +297,8 @@ exports.validateAccessCode = async (req: Request, res: Response, next: NextFunct
 
 exports.protect = async (req: Request, res: Response, next: NextFunction) => {
   // Skip authentication for public routes
-  console.log('Request path:', req.path)
-  if (publicPaths.includes(req.path)) {
+  // ignore socket.io paths
+  if (publicPaths.includes(req.path) || req.path.startsWith('/socket.io')) {
     return next()
   }
 
@@ -296,7 +321,6 @@ exports.protect = async (req: Request, res: Response, next: NextFunction) => {
     // if (!user) {
     //   return next(new AppError(401, 'fail', 'This user is no longer exist'))
     // }
-    console.log('Decoded token:', decoded)
     ;(req as any).user = decoded
     next()
   } catch (err) {
@@ -308,7 +332,6 @@ exports.protect = async (req: Request, res: Response, next: NextFunction) => {
 
 exports.restrictTo = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    console.log(roles, (req as any).user.role)
     if (!roles.includes((req as any).user.role)) {
       return next(new AppError(403, 'fail', 'You are not allowed to do this action'))
     }
