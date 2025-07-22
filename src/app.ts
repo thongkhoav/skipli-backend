@@ -13,6 +13,7 @@ const instructorRoutes = require('./routes/instructorRoutes')
 const studentRoutes = require('./routes/studentRoutes')
 const chatRoutes = require('./routes/chatRoutes')
 const authController = require('./controllers/authController')
+const { v4: uuidv4 } = require('uuid')
 
 const app = express()
 
@@ -50,74 +51,74 @@ app.use(globalErrHandler)
 const httpServer = http.createServer(app)
 const io = new Server(httpServer, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
     credentials: true
   }
 })
 // store connected sockets by userId
-const connectedUsers = new Map<string, string>()
+const connectedUsers: { [key: string]: string } = {}
 
-io.on('connection', (socket) => {
+io.on('connection', (socket: any) => {
   console.log('User connected:', socket.id)
 
-  // Step 1: Identify the user
+  //  Identify the user
   socket.on('register', (userId: string) => {
     console.log(`User ${userId} is registering with socket ${socket.id}`)
-    connectedUsers.set(userId, socket.id)
+    connectedUsers[userId] = socket.id
     console.log(`User ${userId} registered with socket ${socket.id}`)
-    console.log('Connected users:', Array.from(connectedUsers.entries()))
+    console.log('Connected users:', connectedUsers)
   })
 
-  // Step 2: Send a message
-  socket.on('private_message', async ({ to, from, content }) => {
-    const conversationQuery = db
-      .collection('conversations')
-      .where('owner', '==', from)
-      .where('student', '==', to)
-      .limit(1)
-      .get()
-    const conversationDoc = await conversationQuery.docs[0]
-    const conversationRef = conversationDoc.ref
-
-    const messageRef = conversationRef.collection('messages').doc()
-
-    const timestamp = admin.firestore.FieldValue.serverTimestamp()
-
-    //  Save the message
-    await messageRef.set({
-      from,
+  // Receive private messages
+  socket.on(
+    'private_message',
+    async ({
+      conversationId,
       to,
-      content,
-      timestamp
-    })
-
-    //  Update conversation metadata
-    await conversationRef.set(
-      {
-        lastMessage: content,
-        updatedAt: timestamp
-      },
-      { merge: true }
-    )
-
-    //  Emit message to recipient
-    const targetSocketId = connectedUsers.get(to)
-    if (targetSocketId) {
-      io.to(targetSocketId).emit('private_message', {
-        to,
-        from,
+      from,
+      content
+    }: {
+      conversationId: string
+      to: string
+      from: string
+      content: string
+    }) => {
+      console.log(`Private message from ${from} to ${to}: ${content}`)
+      const conversationQuery = await db.collection('conversations').doc(conversationId).get()
+      const message = {
         content,
-        timestamp: Date.now()
-      })
+        from,
+        to,
+        timestamp: new Date().toISOString()
+      }
+      if (!conversationQuery.exists) {
+        return console.error('Conversation does not exist')
+      }
+
+      // // add to collection messages of collection conversations
+      await db.collection('conversations').doc(conversationId).collection('messages').add(message)
+
+      // // emit the message to the recipient
+      console.log('users', connectedUsers)
+      const recipientSocketId = connectedUsers[to]
+      if (recipientSocketId) {
+        console.log(`Emitting message to recipient ${to} with socket ${recipientSocketId}`)
+        io.to(recipientSocketId).emit('private_message', {
+          content,
+          from,
+          to,
+          timestamp: message.timestamp
+        })
+      }
     }
-  })
+  )
 
   // Cleanup on disconnect
   socket.on('disconnect', () => {
-    for (const [userId, socketId] of connectedUsers.entries()) {
-      if (socketId === socket.id) {
-        connectedUsers.delete(userId)
+    for (const userId in connectedUsers) {
+      if (connectedUsers[userId] === socket.id) {
+        delete connectedUsers[userId]
         break
       }
     }
