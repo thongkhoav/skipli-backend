@@ -11,6 +11,8 @@ router.post(userPaths.loginByAccount, authController.loginByAccount)
 router.post(userPaths.createInstructor, authController.createInstructor)
 router.post(userPaths.setupAccount, authController.setupAccount)
 router.post(userPaths.checkStudentNotSetup, authController.checkStudentNotSetup)
+router.put(userPaths.editProfile, authController.editProfile)
+router.get(userPaths.getProfile, authController.getProfile)
 
 // Refresh token route
 router.post(userPaths.refreshToken, authController.refreshToken)

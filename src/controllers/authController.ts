@@ -158,7 +158,6 @@ exports.loginByAccount = async (req: Request, res: Response, next: NextFunction)
       }
     )
     return res.status(200).json({
-      ...userData,
       accessToken: token,
       refreshToken: refreshToken
     })
@@ -286,9 +285,67 @@ exports.validateAccessCode = async (req: Request, res: Response, next: NextFunct
       updatedAt: new Date().toISOString()
     })
     return res.status(200).json({
-      ...userData,
       accessToken: token,
       refreshToken: refreshToken
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
+
+exports.editProfile = async (req: Request, res: Response, next: NextFunction) => {
+  const { name, email, phone, address } = req.body
+  const userId = (req as any).user.id
+  if (!name && !email && !phone) {
+    return next(new AppError(400, 'fail', 'At least one field (name, email, phone) is required to update'))
+  }
+  try {
+    const userRef = db.collection('users').doc(userId)
+    const userDoc = await userRef.get()
+    if (!userDoc.exists) {
+      return next(new AppError(404, 'fail', 'User not found'))
+    }
+    const userData = userDoc.data()
+    const updatedData: any = {}
+    if (name) updatedData.name = name
+    if (email) updatedData.email = email
+    if (phone) updatedData.phone = phone
+    if (address) updatedData.address = address
+    updatedData.updatedAt = new Date().toISOString()
+    await userRef.update(updatedData)
+    return res.status(200).json({
+      message: 'Profile updated successfully',
+      user: {
+        id: userId,
+        name: updatedData.name || userData.name,
+        email: updatedData.email || userData.email,
+        phone: updatedData.phone || userData.phone
+      }
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
+
+exports.getProfile = async (req: Request, res: Response, next: NextFunction) => {
+  const userId = (req as any).user.id
+  try {
+    const userRef = db.collection('users').doc(userId)
+    const userDoc = await userRef.get()
+    if (!userDoc.exists) {
+      return next(new AppError(404, 'fail', 'User not found'))
+    }
+    const userData = userDoc.data()
+    return res.status(200).json({
+      id: userData?.id,
+      name: userData?.name,
+      email: userData?.email,
+      phone: userData?.phone,
+      role: userData?.role,
+      address: userData?.address,
+      isVerified: userData?.isVerified,
+      createdAt: userData?.createdAt,
+      updatedAt: userData?.updatedAt
     })
   } catch (error: any) {
     return next(new AppError(500, 'fail', error.message))
