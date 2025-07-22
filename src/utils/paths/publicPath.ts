@@ -8,5 +8,6 @@ export const publicPaths = [
   userPaths.createInstructor,
   userPaths.loginByAccount,
   userPaths.setupAccount,
-  userPaths.checkStudentNotSetup
+  userPaths.checkStudentNotSetup,
+  userPaths.refreshToken
 ]

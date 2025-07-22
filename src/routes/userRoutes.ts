@@ -12,4 +12,7 @@ router.post(userPaths.createInstructor, authController.createInstructor)
 router.post(userPaths.setupAccount, authController.setupAccount)
 router.post(userPaths.checkStudentNotSetup, authController.checkStudentNotSetup)
 
+// Refresh token route
+router.post(userPaths.refreshToken, authController.refreshToken)
+
 module.exports = router

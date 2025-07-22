@@ -5,5 +5,6 @@ export const userPaths = {
   createInstructor: '/createInstructor',
   checkStudentNotSetup: '/checkStudentNotSetup',
   loginByAccount: '/loginByAccount',
-  setupAccount: '/setupAccount'
+  setupAccount: '/setupAccount',
+  refreshToken: '/refreshToken'
 }

@@ -338,3 +338,33 @@ exports.restrictTo = (roles: string[]) => {
     next()
   }
 }
+
+// refresh token
+exports.refreshToken = async (req: Request, res: Response, next: NextFunction) => {
+  const { refreshToken } = req.body
+  if (!refreshToken) {
+    return next(new AppError(400, 'fail', 'Refresh token is required'))
+  }
+  try {
+    const decoded: any = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SIGN_SECRET)
+    const { phone, email, role, id } = decoded
+    // Check if the user exists
+    const userQuery = await db.collection('users').doc(id).get()
+    if (!userQuery.exists) {
+      return next(new AppError(404, 'fail', 'User not found'))
+    }
+    // Generate new access token
+    const newAccessToken = jwt.sign({ phone, email, role, id }, process.env.ACCESS_TOKEN_SIGN_SECRET, {
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRATION || '1h'
+    })
+    const newRefreshToken = jwt.sign({ phone, email, role, id }, process.env.REFRESH_TOKEN_SIGN_SECRET, {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRATION || '7d'
+    })
+    return res.status(200).json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
