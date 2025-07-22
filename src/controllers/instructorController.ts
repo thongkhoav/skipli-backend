@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken')
 import { UserRole } from '~/utils'
 import { publicPaths } from '~/utils/paths/publicPath'
 import { sendMail } from '~/services/nodemailer'
+import { create } from 'domain'
 const { admin, db } = require('../services/firebase')
 const { v4: uuidv4 } = require('uuid')
 
@@ -54,7 +55,8 @@ exports.addStudent = async (req: Request, res: Response, next: NextFunction) => 
       owner: req.user?.id,
       student: newUserId,
       lastMessage: '',
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
     })
 
     //Add a welcome message
@@ -76,9 +78,7 @@ exports.addStudent = async (req: Request, res: Response, next: NextFunction) => 
     await sendMail(
       email,
       'Welcome to Skipli Classroom',
-      `Hello ${name},\n\nYou have been added as a student in Skipli Classroom.
-      The link will be valid for 7 days.\n\n
-      Please complete your setup by clicking the link below:\n\n${setupUrl}\n\nThank you!`
+      `\nHello ${name},\nYou have been added as a student in Skipli Classroom. The link will be valid for 7 days.\nPlease complete your setup by clicking the link below:\n${setupUrl}\n\nThank you!`
     )
     return res.status(200).json({
       message: 'Student added successfully.'
@@ -209,9 +209,7 @@ exports.getStudents = async (req: Request, res: Response, next: NextFunction) =>
     const studentDetails = await Promise.all(
       students.map(async (id: string) => {
         const userRef = db.collection('users').doc(id)
-        console.log('Fetching user details for student:', id)
         const userDoc = await userRef.get()
-        console.log('User reference:', userDoc.data())
         if (userDoc.exists) {
           return {
             id: userDoc.id,
@@ -337,6 +335,7 @@ exports.getChats = async (req: Request, res: Response, next: NextFunction) => {
     if (!userId) {
       return next(new AppError(401, 'fail', 'Unauthorized access'))
     }
+    // sort by updatedAt in descending order
     const conversationsQuery = await db.collection('conversations').where('owner', '==', userId).get()
     if (conversationsQuery.empty) {
       return res.status(200).json({

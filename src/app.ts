@@ -60,8 +60,7 @@ const io = new Server(httpServer, {
 const connectedUsers: { [key: string]: string } = {}
 
 io.on('connection', (socket: any) => {
-  console.log('User connected:', socket.id)
-
+  console.log('New socket connection:', socket.id)
   //  Identify the user
   socket.on('register', (userId: string) => {
     connectedUsers[userId] = socket.id
@@ -81,7 +80,6 @@ io.on('connection', (socket: any) => {
       from: string
       content: string
     }) => {
-      console.log(`Private message from ${from} to ${to}: ${content}`)
       const conversationQuery = await db.collection('conversations').doc(conversationId).get()
       const message = {
         content,
@@ -102,11 +100,9 @@ io.on('connection', (socket: any) => {
       //add to collection messages of collection conversations
       await db.collection('conversations').doc(conversationId).collection('messages').add(message)
 
-      // // emit the message to the recipient
-      console.log('users', connectedUsers)
+      // emit the message to the recipient
       const recipientSocketId = connectedUsers[to]
       if (recipientSocketId) {
-        console.log(`Emitting message to recipient ${to} with socket ${recipientSocketId}`)
         io.to(recipientSocketId).emit('private_message', {
           content,
           from,
@@ -126,7 +122,6 @@ io.on('connection', (socket: any) => {
         break
       }
     }
-    console.log('User disconnected:', socket.id)
   })
 })
 

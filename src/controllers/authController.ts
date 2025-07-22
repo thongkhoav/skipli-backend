@@ -69,7 +69,7 @@ exports.createAccessCode = async (req: Request, res: Response, next: NextFunctio
       .where('role', '==', UserRole.INSTRUCTOR)
       .get()
     if (query.empty) {
-      return next(new AppError(400, 'fail', 'Instructor not found with this phone number'))
+      return next(new AppError(400, 'fail', 'Instructor not found'))
     }
     const userRef = query.docs[0].ref
 
@@ -189,9 +189,20 @@ exports.setupAccount = async (req: Request, res: Response, next: NextFunction) =
     if (userQuery.empty) {
       return next(new AppError(404, 'fail', 'User not found'))
     }
+
+    // Check if the user is already setup
+    const userDoc = userQuery.docs[0]
+    if (userDoc.data().isVerified) {
+      return next(new AppError(400, 'fail', 'User account is already setup'))
+    }
+
+    // Check if the username already exists
+    const usernameQuery = await db.collection('users').where('username', '==', username).get()
+    if (!usernameQuery.empty) {
+      return next(new AppError(400, 'fail', 'Username already exists'))
+    }
     const hashedPassword = await bcrypt.hash(password, 10)
     // Update user with username and hashed password
-    const userDoc = userQuery.docs[0]
     await userDoc.ref.update({
       isVerified: true,
       username,
@@ -293,6 +304,7 @@ exports.validateAccessCode = async (req: Request, res: Response, next: NextFunct
   }
 }
 
+//
 exports.editProfile = async (req: Request, res: Response, next: NextFunction) => {
   const { name, email, phone, address } = req.body
   const userId = (req as any).user.id
@@ -308,8 +320,22 @@ exports.editProfile = async (req: Request, res: Response, next: NextFunction) =>
     const userData = userDoc.data()
     const updatedData: any = {}
     if (name) updatedData.name = name
-    if (email) updatedData.email = email
-    if (phone) updatedData.phone = phone
+    if (email) {
+      // Check if email already exists
+      const emailQuery = await db.collection('users').where('email', '==', email).get()
+      if (!emailQuery.empty && emailQuery.docs[0].id !== userId) {
+        return next(new AppError(400, 'fail', 'Email already exists'))
+      }
+      updatedData.email = email
+    }
+    if (phone) {
+      // Check if phone already exists
+      const phoneQuery = await db.collection('users').where('phone', '==', phone).get()
+      if (!phoneQuery.empty && phoneQuery.docs[0].id !== userId) {
+        return next(new AppError(400, 'fail', 'Phone number already exists'))
+      }
+      updatedData.phone = phone
+    }
     if (address) updatedData.address = address
     updatedData.updatedAt = new Date().toISOString()
     await userRef.update(updatedData)
@@ -360,7 +386,7 @@ exports.protect = async (req: Request, res: Response, next: NextFunction) => {
   }
 
   try {
-    // 1) check if the token is there
+    // check if the token is there
     let token
 
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -370,14 +396,8 @@ exports.protect = async (req: Request, res: Response, next: NextFunction) => {
       return next(new AppError(401, 'fail', 'You are not logged in! Please login in to continue'))
     }
 
-    // 2) Verify token
+    //  Verify token
     const decoded = await jwt.verify(token, process.env.ACCESS_TOKEN_SIGN_SECRET)
-
-    // 3) check if the user is exist (not deleted)
-    // const user = await User.findById(decode.id)
-    // if (!user) {
-    //   return next(new AppError(401, 'fail', 'This user is no longer exist'))
-    // }
     ;(req as any).user = decoded
     next()
   } catch (err) {
