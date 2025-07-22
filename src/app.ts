@@ -42,10 +42,10 @@ app.use('/', chatRoutes)
 app.use(globalErrHandler)
 
 // handle undefined Routes
-// app.use(/(.*)/, (req: Request, res: Response, next: NextFunction) => {
-//   const err = new AppError(404, 'fail', 'undefined route')
-//   next(err)
-// })
+app.use(/(.*)/, (req: Request, res: Response, next: NextFunction) => {
+  const err = new AppError(404, 'fail', 'undefined route')
+  next(err)
+})
 
 // Setup socket.io
 const httpServer = http.createServer(app)
@@ -64,10 +64,7 @@ io.on('connection', (socket: any) => {
 
   //  Identify the user
   socket.on('register', (userId: string) => {
-    console.log(`User ${userId} is registering with socket ${socket.id}`)
     connectedUsers[userId] = socket.id
-    console.log(`User ${userId} registered with socket ${socket.id}`)
-    console.log('Connected users:', connectedUsers)
   })
 
   // Receive private messages
@@ -96,7 +93,13 @@ io.on('connection', (socket: any) => {
         return console.error('Conversation does not exist')
       }
 
-      // // add to collection messages of collection conversations
+      // add last message to conversation
+      await db.collection('conversations').doc(conversationId).update({
+        lastMessage: content,
+        updatedAt: new Date().toISOString()
+      })
+
+      //add to collection messages of collection conversations
       await db.collection('conversations').doc(conversationId).collection('messages').add(message)
 
       // // emit the message to the recipient
@@ -108,7 +111,8 @@ io.on('connection', (socket: any) => {
           content,
           from,
           to,
-          timestamp: message.timestamp
+          timestamp: message.timestamp,
+          conversationId
         })
       }
     }

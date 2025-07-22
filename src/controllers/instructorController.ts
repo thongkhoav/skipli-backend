@@ -116,6 +116,86 @@ exports.editStudentById = async (req: Request, res: Response, next: NextFunction
   }
 }
 
+exports.deleteStudentById = async (req: Request, res: Response, next: NextFunction) => {
+  const instructorId = req.user?.id
+  if (!instructorId) {
+    return next(new AppError(401, 'fail', 'Unauthorized access'))
+  }
+  const studentId = req.params.id
+  if (!studentId) {
+    return next(new AppError(400, 'fail', 'Student ID is required'))
+  }
+  try {
+    const studentRef = db.collection('users').doc(studentId)
+    const studentDoc = await studentRef.get()
+    if (!studentDoc.exists) {
+      return next(new AppError(404, 'fail', 'Student not found'))
+    }
+    // Remove student from classroom
+    const roomQuery = await db
+      .collection('classrooms')
+      .where('students', 'array-contains', studentId)
+      .where('owner', '==', instructorId)
+      .get()
+    if (roomQuery.empty) {
+      return next(new AppError(404, 'fail', 'Classroom not found'))
+    }
+    const roomRef = roomQuery.docs[0].ref
+    await roomRef.update({
+      students: admin.firestore.FieldValue.arrayRemove(studentId)
+    })
+
+    // delete conversations related to the student
+    const conversationsQuery = await db
+      .collection('conversations')
+      .where('student', '==', studentId)
+      .where('owner', '==', instructorId)
+      .get()
+    if (!conversationsQuery.empty) {
+      const batch = db.batch()
+      conversationsQuery.docs.forEach((doc: any) => {
+        batch.delete(doc.ref)
+      })
+      await batch.commit()
+    }
+
+    // remove students from lessons
+    const lessonsQuery = await db
+      .collection('lessons')
+      .where('students', 'array-contains', studentId)
+      .where('creator', '==', instructorId)
+      .get()
+    if (!lessonsQuery.empty) {
+      const batch = db.batch()
+      lessonsQuery.docs.forEach((doc: any) => {
+        const lessonRef = doc.ref
+        batch.update(lessonRef, {
+          students: admin.firestore.FieldValue.arrayRemove(studentId)
+        })
+      })
+      await batch.commit()
+    }
+
+    // delete lessonStatus for the student
+    const lessonStatusQuery = await db.collection('lessonStatus').where('userId', '==', studentId).get()
+    if (!lessonStatusQuery.empty) {
+      const batch = db.batch()
+      lessonStatusQuery.docs.forEach((doc: any) => {
+        batch.delete(doc.ref)
+      })
+      await batch.commit()
+    }
+
+    // Delete student document
+    await studentRef.delete()
+    return res.status(200).json({
+      message: 'Student deleted successfully.'
+    })
+  } catch (error: any) {
+    return next(new AppError(500, 'fail', error.message))
+  }
+}
+
 exports.getStudents = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const roomQuery = await db.collection('classrooms').where('owner', '==', req?.user?.id).get()
@@ -127,12 +207,14 @@ exports.getStudents = async (req: Request, res: Response, next: NextFunction) =>
     const students = roomDoc.data()?.students || []
     // Fetch user details for each student
     const studentDetails = await Promise.all(
-      students.map(async (email: string) => {
-        const userRef = db.collection('users').doc(email)
+      students.map(async (id: string) => {
+        const userRef = db.collection('users').doc(id)
+        console.log('Fetching user details for student:', id)
         const userDoc = await userRef.get()
+        console.log('User reference:', userDoc.data())
         if (userDoc.exists) {
           return {
-            email: userDoc.id,
+            id: userDoc.id,
             ...userDoc.data()
           }
         }

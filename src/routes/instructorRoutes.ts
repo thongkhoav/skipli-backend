@@ -16,6 +16,11 @@ router.put(
   authController.restrictTo([UserRole.INSTRUCTOR]),
   instructorController.editStudentById
 )
+router.delete(
+  instructorPaths.deleteStudentById,
+  authController.restrictTo([UserRole.INSTRUCTOR]),
+  instructorController.deleteStudentById
+)
 router.get(
   instructorPaths.getStudents,
   authController.restrictTo([UserRole.INSTRUCTOR]),

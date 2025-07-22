@@ -59,9 +59,15 @@ exports.studentChatRoom = async (req: Request, res: Response, next: NextFunction
         data: {}
       })
     }
+    const instructorData = await db.collection('users').doc(conversationsQuery.docs[0]?.data()?.owner).get()
     return res.status(200).json({
       status: 'success',
-      data: conversationsQuery.docs[0]?.data() || {}
+      data: {
+        id: conversationsQuery.docs[0].id,
+        owner: conversationsQuery.docs[0].data().owner,
+        ownerName: instructorData.data()?.name,
+        lastMessage: conversationsQuery.docs[0].data().lastMessage
+      }
     })
   } catch (error) {
     next(new AppError(500, 'fail', 'An error occurred while fetching lessons'))
